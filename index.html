@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Legal Transcriber V2</title>
+<title>Legal Transcriber V2.5</title>
 
 <style>
 body {
@@ -20,6 +20,13 @@ header {
   font-weight: bold;
 }
 
+/* Layout */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 .controls {
   padding: 8px;
   display: flex;
@@ -28,28 +35,22 @@ header {
   background: #020617;
 }
 
-button, select {
-  padding: 6px;
-  border-radius: 6px;
-  border: none;
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-button { background: #2563eb; color: white; }
-
-textarea {
-  width: 100%;
-  background: #020617;
-  color: #e5e7eb;
-  border: none;
-  padding: 10px;
-  resize: none;
+.text-area {
+  flex: 1;
+  display: flex;
 }
 
-.container { display: flex; flex-direction: column; height: 100vh; }
-
-.split { flex: 1; display: flex; }
-
-.panel { flex: 1; display: flex; flex-direction: column; }
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 
 .panel h3 {
   margin: 0;
@@ -58,61 +59,77 @@ textarea {
   font-size: 14px;
 }
 
-.mismatch {
-  background: rgba(255,0,0,0.2);
+textarea {
+  flex: 1;
+  background: #020617;
+  color: #e5e7eb;
+  border: none;
+  padding: 10px;
+  resize: none;
+}
+
+/* Separate media zone */
+.media-zone {
+  padding: 12px;
+  background: #020617;
+  border-top: 2px solid #1e293b;
 }
 
 video {
   width: 100%;
-  background: black;
+  border-radius: 10px;
 }
 
+/* Mobile */
 @media(max-width:768px){
-  .split { flex-direction: column; }
+  .text-area { flex-direction: column; }
 }
 </style>
 </head>
 
 <body>
 
-<header>⚖️ Courtroom Transcriber V2</header>
+<header>⚖️ Courtroom Transcriber V2.5</header>
 
-<div class="controls">
-  <input type="file" id="mediaFile" accept="audio/*,video/*">
-  <input type="file" id="textFile" accept=".txt">
+<div class="container">
 
-  <button onclick="startRec()">Start</button>
-  <button onclick="stopRec()">Stop</button>
-  <button onclick="insertTimestamp()">⏱</button>
-  <button onclick="compareText()">Compare</button>
-  <button onclick="exportTxt()">Export</button>
+  <div class="controls">
+    <input type="file" id="mediaFile" accept="audio/*,video/*">
+    <input type="file" id="textFile" accept=".txt">
 
-  <select onchange="setSpeed(this.value)">
-    <option value="1">1x</option>
-    <option value="1.5">1.5x</option>
-    <option value="2">2x</option>
-    <option value="0.75">0.75x</option>
-  </select>
-
-  <button onclick="jump(-5)">⏪ 5s</button>
-  <button onclick="jump(5)">⏩ 5s</button>
-</div>
-
-<textarea id="instructions" placeholder="Instructions (file-specific overrides rules)"></textarea>
-
-<div class="split">
-  <div class="panel">
-    <h3>Reference</h3>
-    <textarea id="ref"></textarea>
+    <button onclick="startRec()">Start</button>
+    <button onclick="stopRec()">Stop</button>
+    <button onclick="insertTimestamp()">⏱</button>
+    <button onclick="applyProcessing()">Apply Rules</button>
+    <button onclick="compareText()">Compare</button>
   </div>
 
-  <div class="panel">
-    <h3>Live Transcript</h3>
-    <textarea id="live"></textarea>
-  </div>
-</div>
+  <!-- Instruction Priority -->
+  <textarea id="instructions" placeholder="FILE INSTRUCTIONS (Highest Priority)"></textarea>
+  <textarea id="rules" placeholder="RULES / STYLE GUIDE"></textarea>
 
-<video id="player" controls></video>
+  <div class="main">
+
+    <div class="text-area">
+      <div class="panel">
+        <h3>Reference Transcript</h3>
+        <textarea id="ref"></textarea>
+      </div>
+
+      <div class="panel">
+        <h3>Live Transcript</h3>
+        <textarea id="live"></textarea>
+      </div>
+    </div>
+
+    <!-- Media separated -->
+    <div class="media-zone">
+      <video id="player" controls></video>
+    </div>
+
+  </div>
+
+</div>
 
 <script>
 let recognition;
@@ -121,18 +138,15 @@ let running = false;
 const live = document.getElementById("live");
 const ref = document.getElementById("ref");
 
-function loadText(file){
+mediaFile.onchange = e => {
+  player.src = URL.createObjectURL(e.target.files[0]);
+};
+
+textFile.onchange = e => {
   const r = new FileReader();
-  r.onload = e => ref.value = e.target.result;
-  r.readAsText(file);
-}
-
-function loadMedia(file){
-  player.src = URL.createObjectURL(file);
-}
-
-mediaFile.onchange = e => loadMedia(e.target.files[0]);
-textFile.onchange = e => loadText(e.target.files[0]);
+  r.onload = ev => ref.value = ev.target.result;
+  r.readAsText(e.target.files[0]);
+};
 
 function startRec(){
   if(!('webkitSpeechRecognition' in window)){
@@ -142,7 +156,6 @@ function startRec(){
 
   recognition = new webkitSpeechRecognition();
   recognition.continuous = true;
-  recognition.interimResults = true;
 
   recognition.onresult = e => {
     let t = "";
@@ -150,7 +163,6 @@ function startRec(){
       t += e.results[i][0].transcript;
     }
     live.value += t + " ";
-    save();
   };
 
   recognition.start();
@@ -164,51 +176,70 @@ function stopRec(){
   }
 }
 
-function insertTimestamp(){
-  let t = player.currentTime.toFixed(2);
-  live.value += ` [${t}s] `;
+/* =========================
+   PRIORITY PROCESSING ENGINE
+========================= */
+
+function applyProcessing(){
+  let text = live.value;
+
+  const instructions = document.getElementById("instructions").value.toLowerCase();
+  const rules = document.getElementById("rules").value.toLowerCase();
+
+  // DEFAULT CLEANING
+  text = text.replace(/\s+/g, " ");
+
+  // RULES LAYER
+  if(rules.includes("capitalize")){
+    text = text.replace(/(^\w|\.\s*\w)/g, c => c.toUpperCase());
+  }
+
+  // INSTRUCTION OVERRIDE
+  if(instructions.includes("uppercase")){
+    text = text.toUpperCase();
+  }
+
+  if(instructions.includes("remove filler")){
+    text = text.replace(/\b(um|uh|like)\b/gi, "");
+  }
+
+  if(instructions.includes("strict verbatim")){
+    // override cleanup
+    text = live.value;
+  }
+
+  live.value = text;
 }
+
+/* =========================
+   COMPARE ENGINE
+========================= */
 
 function compareText(){
   let l = live.value.split(" ");
   let r = ref.value.split(" ");
 
-  let result = "";
+  let output = "";
 
   for(let i=0;i<l.length;i++){
     if(l[i] !== r[i]){
-      result += `<span class="mismatch">${l[i]}</span> `;
+      output += `<span style="background:red">${l[i]}</span> `;
     } else {
-      result += l[i] + " ";
+      output += l[i] + " ";
     }
   }
 
-  live.innerHTML = result;
+  live.innerHTML = output;
 }
 
-function setSpeed(v){
-  player.playbackRate = v;
+/* =========================
+   UTIL
+========================= */
+
+function insertTimestamp(){
+  live.value += `[${player.currentTime.toFixed(2)}s] `;
 }
 
-function jump(sec){
-  player.currentTime += sec;
-}
-
-function exportTxt(){
-  const blob = new Blob([live.value], {type:"text/plain"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "transcript.txt";
-  a.click();
-}
-
-function save(){
-  localStorage.setItem("live", live.value);
-}
-
-window.onload = ()=>{
-  live.value = localStorage.getItem("live") || "";
-};
 </script>
 
 </body>
