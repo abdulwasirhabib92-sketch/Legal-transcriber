@@ -1,1 +1,222 @@
-# Legal-transcriber
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legal Transcriber Pro</title>
+
+<!-- WaveSurfer -->
+<script src="https://unpkg.com/wavesurfer.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: system-ui;
+  background: #0d0d0d;
+  color: #eee;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  background: #1c1c1c;
+}
+
+#waveform {
+  height: 100px;
+  background: #111;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 10px;
+  background: #222;
+}
+
+button, select {
+  padding: 8px;
+  background: #333;
+  color: white;
+  border: none;
+  border-radius: 5px;
+}
+
+.editor-container {
+  display: flex;
+  height: 40vh;
+}
+
+textarea {
+  flex: 1;
+  margin: 5px;
+  padding: 10px;
+  background: #000;
+  color: #00ff9c;
+  border: none;
+  font-family: monospace;
+}
+
+#diff {
+  padding: 10px;
+  height: 20vh;
+  overflow: auto;
+  background: #111;
+  font-size: 12px;
+}
+
+.removed { color: #ff5555; }
+
+@media (max-width: 768px) {
+  .editor-container {
+    flex-direction: column;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h3>Transcriber Pro</h3>
+  <input type="file" id="audioUpload" accept="audio/*,video/*">
+</header>
+
+<div id="waveform"></div>
+
+<div class="controls">
+  <button onclick="rewind()">⏪</button>
+  <button onclick="playPause()">▶ / ⏸</button>
+  <button onclick="forward()">⏩</button>
+  <button onclick="toggleLoop()">🔁 Loop</button>
+  <button onclick="insertTimestamp()">⏱</button>
+
+  <select onchange="setSpeed(this.value)">
+    <option value="0.75">0.75x</option>
+    <option value="1" selected>1x</option>
+    <option value="1.25">1.25x</option>
+    <option value="1.5">1.5x</option>
+  </select>
+</div>
+
+<div class="editor-container">
+  <textarea id="transcript" placeholder="Transcribe here..."></textarea>
+  <textarea id="reference" placeholder="Reference transcript..."></textarea>
+</div>
+
+<div id="diff"></div>
+
+<script>
+let wavesurfer;
+let loopActive = false;
+let loopStart = 0;
+let loopEnd = 0;
+
+const transcript = document.getElementById("transcript");
+const reference = document.getElementById("reference");
+
+// INIT
+wavesurfer = WaveSurfer.create({
+  container: "#waveform",
+  waveColor: "#555",
+  progressColor: "#00ff9c",
+  height: 80
+});
+
+// LOAD AUDIO
+document.getElementById("audioUpload").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (file) {
+    wavesurfer.load(URL.createObjectURL(file));
+  }
+});
+
+// CONTROLS
+function playPause() { wavesurfer.playPause(); }
+function rewind() { wavesurfer.skipBackward(5); }
+function forward() { wavesurfer.skipForward(5); }
+function setSpeed(s) { wavesurfer.setPlaybackRate(s); }
+
+// LOOP
+function toggleLoop() {
+  if (!loopActive) {
+    loopStart = wavesurfer.getCurrentTime();
+    loopEnd = loopStart + 5;
+    loopActive = true;
+    alert("Loop ON (5s)");
+  } else {
+    loopActive = false;
+    alert("Loop OFF");
+  }
+}
+
+wavesurfer.on('audioprocess', () => {
+  if (loopActive && wavesurfer.getCurrentTime() > loopEnd) {
+    wavesurfer.seekTo(loopStart / wavesurfer.getDuration());
+  }
+});
+
+// TIMESTAMP
+function insertTimestamp() {
+  let t = wavesurfer.getCurrentTime();
+  let ts = "[" + t.toFixed(2) + "] ";
+  insertAtCursor(transcript, ts);
+}
+
+function insertAtCursor(field, text) {
+  let start = field.selectionStart;
+  let end = field.selectionEnd;
+  field.value =
+    field.value.substring(0, start) +
+    text +
+    field.value.substring(end);
+}
+
+// AUTOSAVE
+setInterval(() => {
+  localStorage.setItem("t", transcript.value);
+  localStorage.setItem("r", reference.value);
+}, 1000);
+
+window.onload = () => {
+  transcript.value = localStorage.getItem("t") || "";
+  reference.value = localStorage.getItem("r") || "";
+};
+
+// DIFF
+function diffText(a, b) {
+  let result = "";
+  let aWords = a.split(" ");
+  let bWords = b.split(" ");
+
+  aWords.forEach((word, i) => {
+    if (word !== bWords[i]) {
+      result += `<span class="removed">${word}</span> `;
+    } else {
+      result += word + " ";
+    }
+  });
+
+  return result;
+}
+
+setInterval(() => {
+  document.getElementById("diff").innerHTML =
+    diffText(transcript.value, reference.value);
+}, 1500);
+
+// SHORTCUTS
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === "/") {
+    e.preventDefault();
+    playPause();
+  }
+  if (e.ctrlKey && e.key === ".") forward();
+  if (e.ctrlKey && e.key === ",") rewind();
+});
+</script>
+
+</body>
+</html>
